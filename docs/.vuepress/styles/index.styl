@@ -1,0 +1,524 @@
+// 自定义样式文件
+
+// 主题色彩配置
+:root {
+  // 主色调
+  --c-brand: #3eaf7c;
+  --c-brand-light: #4abf8a;
+  --c-brand-lighter: #5ccf96;
+  --c-brand-lightest: #6edfa2;
+  --c-brand-dark: #369970;
+  --c-brand-darker: #2d8660;
+  
+  // 文本颜色
+  --c-text: #2c3e50;
+  --c-text-light: #3a5169;
+  --c-text-lighter: #4e6e8e;
+  --c-text-lightest: #6a8bad;
+  
+  // 背景色
+  --c-bg: #ffffff;
+  --c-bg-light: #f3f4f5;
+  --c-bg-lighter: #eeeeee;
+  --c-bg-navbar: #ffffff;
+  --c-bg-sidebar: #f8f9fa;
+  --c-bg-arrow: #cccccc;
+  
+  // 边框色
+  --c-border: #eaecef;
+  --c-border-dark: #dfe2e5;
+  
+  // 代码块
+  --c-code-bg: #f1f3f4;
+  --c-code-text: #476582;
+  
+  // 提示框
+  --c-tip: #42b883;
+  --c-warning: #e7c000;
+  --c-danger: #cc0000;
+}
+
+// 暗色主题
+.dark {
+  --c-bg: #22272e;
+  --c-bg-light: #2d333b;
+  --c-bg-lighter: #373e47;
+  --c-bg-navbar: #1c2128;
+  --c-bg-sidebar: #1c2128;
+  
+  --c-text: #adbac7;
+  --c-text-light: #96a7b7;
+  --c-text-lighter: #8b949e;
+  
+  --c-border: #373e47;
+  --c-border-dark: #444c56;
+  
+  --c-code-bg: #373e47;
+  --c-code-text: #96a7b7;
+}
+
+// 全局样式
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+// 导航栏样式
+.navbar {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  backdrop-filter: blur(8px);
+  
+  .navbar-brand {
+    font-weight: 600;
+    font-size: 1.3rem;
+  }
+  
+  .navbar-items {
+    .navbar-item {
+      font-weight: 500;
+      
+      &:hover {
+        color: var(--c-brand);
+      }
+    }
+  }
+}
+
+// 侧边栏样式
+.sidebar {
+  background-color: var(--c-bg-sidebar);
+  border-right: 1px solid var(--c-border);
+  
+  .sidebar-group {
+    &.is-sub-group {
+      padding-left: 0;
+    }
+    
+    .sidebar-heading {
+      font-weight: 600;
+      font-size: 1.1rem;
+      color: var(--c-text);
+      padding: 0.35rem 1.5rem 0.35rem 1.25rem;
+      
+      &:not(.clickable) {
+        opacity: 0.8;
+      }
+    }
+  }
+  
+  .sidebar-link {
+    font-weight: 400;
+    padding: 0.35rem 1.5rem 0.35rem 2rem;
+    
+    &.active {
+      font-weight: 600;
+      color: var(--c-brand);
+      border-right: 2px solid var(--c-brand);
+    }
+    
+    &:hover {
+      color: var(--c-brand);
+    }
+  }
+}
+
+// 主内容区域
+.theme-default-content {
+  max-width: 900px;
+  
+  // 标题样式
+  h1, h2, h3, h4, h5, h6 {
+    font-weight: 600;
+    line-height: 1.25;
+    
+    .header-anchor {
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    
+    &:hover .header-anchor {
+      opacity: 1;
+    }
+  }
+  
+  h1 {
+    font-size: 2.2rem;
+    padding-bottom: 0.3rem;
+    border-bottom: 2px solid var(--c-border);
+  }
+  
+  h2 {
+    font-size: 1.65rem;
+    padding-bottom: 0.3rem;
+    border-bottom: 1px solid var(--c-border);
+  }
+  
+  h3 {
+    font-size: 1.35rem;
+  }
+  
+  // 段落样式
+  p {
+    line-height: 1.7;
+    margin: 1rem 0;
+  }
+  
+  // 链接样式
+  a {
+    color: var(--c-brand);
+    text-decoration: none;
+    
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+  
+  // 列表样式
+  ul, ol {
+    padding-left: 1.2em;
+    
+    li {
+      margin: 0.5rem 0;
+    }
+  }
+  
+  // 表格样式
+  table {
+    border-collapse: collapse;
+    margin: 1rem 0;
+    display: block;
+    width: 100%;
+    overflow: auto;
+    
+    th, td {
+      border: 1px solid var(--c-border);
+      padding: 0.6em 1em;
+    }
+    
+    th {
+      background-color: var(--c-bg-light);
+      font-weight: 600;
+    }
+    
+    tr:nth-child(2n) {
+      background-color: var(--c-bg-light);
+    }
+  }
+}
+
+// 代码块样式
+.theme-default-content {
+  div[class*="language-"] {
+    position: relative;
+    margin: 1rem 0;
+    background-color: var(--c-code-bg);
+    border-radius: 6px;
+    overflow: hidden;
+    
+    &::before {
+      position: absolute;
+      top: 0.8em;
+      right: 1em;
+      font-size: 0.75rem;
+      color: var(--c-text-lighter);
+    }
+    
+    pre {
+      margin: 0;
+      padding: 1.25rem 1.5rem;
+      overflow-x: auto;
+      
+      code {
+        background-color: transparent;
+        border-radius: 0;
+        color: var(--c-code-text);
+        padding: 0;
+        
+        .line-number {
+          color: var(--c-text-lighter);
+        }
+      }
+    }
+    
+    &.line-numbers-mode {
+      .line-numbers-wrapper {
+        background-color: var(--c-bg-lighter);
+        border-right: 1px solid var(--c-border);
+        
+        .line-number {
+          color: var(--c-text-lighter);
+        }
+      }
+    }
+  }
+  
+  // 行内代码
+  code {
+    background-color: var(--c-code-bg);
+    color: var(--c-code-text);
+    padding: 0.25rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.85em;
+  }
+}
+
+// 自定义容器样式
+.custom-container {
+  margin: 1rem 0;
+  padding: 0.1rem 1.5rem;
+  border-left: 0.5rem solid;
+  border-radius: 0 0.5rem 0.5rem 0;
+  
+  &.tip {
+    background-color: #f3f5f7;
+    border-color: var(--c-tip);
+    
+    .custom-container-title {
+      color: var(--c-tip);
+    }
+  }
+  
+  &.warning {
+    background-color: rgba(255, 229, 100, 0.3);
+    border-color: var(--c-warning);
+    
+    .custom-container-title {
+      color: var(--c-warning);
+    }
+  }
+  
+  &.danger {
+    background-color: #ffe6e6;
+    border-color: var(--c-danger);
+    
+    .custom-container-title {
+      color: var(--c-danger);
+    }
+  }
+  
+  .custom-container-title {
+    font-weight: 600;
+    margin-bottom: -0.4rem;
+  }
+}
+
+// 响应式设计
+@media (max-width: 719px) {
+  .theme-default-content {
+    padding: 1rem;
+    
+    h1 {
+      font-size: 1.9rem;
+    }
+    
+    h2 {
+      font-size: 1.5rem;
+    }
+    
+    h3 {
+      font-size: 1.25rem;
+    }
+  }
+  
+  .navbar {
+    .navbar-brand {
+      font-size: 1.1rem;
+    }
+  }
+}
+
+// 打印样式
+@media print {
+  .navbar,
+  .sidebar,
+  .page-edit,
+  .page-nav {
+    display: none !important;
+  }
+  
+  .theme-default-content {
+    max-width: none;
+    margin: 0;
+    padding: 0;
+  }
+}
+
+// 动画效果
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s;
+}
+
+.fade-enter,
+.fade-leave-to {
+  opacity: 0;
+}
+
+// 滚动条样式
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--c-bg-light);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--c-border-dark);
+  border-radius: 3px;
+  
+  &:hover {
+    background: var(--c-text-lighter);
+  }
+}
+
+// 选择文本样式
+::selection {
+  background: var(--c-brand);
+  color: white;
+}
+
+// 焦点样式
+*:focus {
+  outline: 2px solid var(--c-brand);
+  outline-offset: 2px;
+}
+
+// 按钮样式
+.btn {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  background-color: var(--c-brand);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  text-decoration: none;
+  font-weight: 500;
+  transition: all 0.2s;
+  
+  &:hover {
+    background-color: var(--c-brand-dark);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  }
+  
+  &.btn-outline {
+    background-color: transparent;
+    color: var(--c-brand);
+    border: 1px solid var(--c-brand);
+    
+    &:hover {
+      background-color: var(--c-brand);
+      color: white;
+    }
+  }
+}
+
+// 徽章样式
+.badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 12px;
+  
+  &.badge-tip {
+    background-color: var(--c-tip);
+    color: white;
+  }
+  
+  &.badge-warning {
+    background-color: var(--c-warning);
+    color: white;
+  }
+  
+  &.badge-danger {
+    background-color: var(--c-danger);
+    color: white;
+  }
+}
+
+// 卡片样式
+.card {
+  background-color: var(--c-bg);
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin: 1rem 0;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  
+  .card-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: var(--c-text);
+  }
+  
+  .card-content {
+    color: var(--c-text-light);
+    line-height: 1.6;
+  }
+}
+
+// 网格布局
+.grid {
+  display: grid;
+  gap: 1rem;
+  
+  &.grid-2 {
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  }
+  
+  &.grid-3 {
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  }
+}
+
+// 特殊页面样式
+.home {
+  .hero {
+    text-align: center;
+    padding: 3rem 0;
+    
+    .hero-title {
+      font-size: 3rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+      background: linear-gradient(45deg, var(--c-brand), var(--c-brand-light));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    
+    .hero-description {
+      font-size: 1.2rem;
+      color: var(--c-text-light);
+      margin-bottom: 2rem;
+    }
+  }
+  
+  .features {
+    padding: 2rem 0;
+    
+    .feature {
+      text-align: center;
+      padding: 1rem;
+      
+      .feature-icon {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+      }
+      
+      .feature-title {
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+      }
+      
+      .feature-description {
+        color: var(--c-text-light);
+      }
+    }
+  }
+}

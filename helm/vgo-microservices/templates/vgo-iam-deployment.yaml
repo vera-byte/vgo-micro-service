@@ -1,0 +1,149 @@
+{{- if .Values.vgoIam.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "vgo-microservices.fullname" . }}-iam
+  labels:
+    {{- include "vgo-microservices.labels" . | nindent 4 }}
+    app.kubernetes.io/component: iam
+    {{- with .Values.extraLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.extraAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  replicas: {{ .Values.vgoIam.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "vgo-microservices.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: iam
+  template:
+    metadata:
+      labels:
+        {{- include "vgo-microservices.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: iam
+        {{- with .Values.extraLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/vgo-iam-configmap.yaml") . | sha256sum }}
+        {{- with .Values.extraAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "vgo-microservices.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: vgo-iam
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.global.imageRegistry | default .Values.vgoIam.image.registry }}/{{ .Values.vgoIam.image.repository }}:{{ .Values.vgoIam.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.vgoIam.image.pullPolicy }}
+          ports:
+            - name: grpc
+              containerPort: {{ .Values.vgoIam.service.grpcPort }}
+              protocol: TCP
+            - name: http
+              containerPort: {{ .Values.vgoIam.service.httpPort }}
+              protocol: TCP
+            - name: metrics
+              containerPort: {{ .Values.vgoIam.service.metricsPort }}
+              protocol: TCP
+          env:
+            - name: ENVIRONMENT
+              value: {{ .Values.environment | quote }}
+            - name: GRPC_PORT
+              value: {{ .Values.vgoIam.service.grpcPort | quote }}
+            - name: HTTP_PORT
+              value: {{ .Values.vgoIam.service.httpPort | quote }}
+            - name: METRICS_PORT
+              value: {{ .Values.vgoIam.service.metricsPort | quote }}
+            - name: POSTGRES_HOST
+              value: {{ include "vgo-microservices.postgresql.fullname" . }}
+            - name: POSTGRES_PORT
+              value: "5432"
+            - name: POSTGRES_USER
+              value: {{ .Values.postgresql.auth.username | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vgo-microservices.postgresql.secretName" . }}
+                  key: password
+            - name: POSTGRES_DATABASE
+              value: {{ .Values.postgresql.auth.database | quote }}
+            - name: REDIS_HOST
+              value: {{ include "vgo-microservices.redis.fullname" . }}-master
+            - name: REDIS_PORT
+              value: "6379"
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vgo-microservices.redis.secretName" . }}
+                  key: redis-password
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vgo-microservices.fullname" . }}-iam-secret
+                  key: jwt-secret
+            - name: JWT_EXPIRY
+              value: {{ .Values.vgoIam.config.jwt.expiry | quote }}
+            - name: RATE_LIMIT
+              value: {{ .Values.vgoIam.config.rateLimit | quote }}
+            - name: ACCESS_KEY_ROTATION_DAYS
+              value: {{ .Values.vgoIam.config.accessKeyRotationDays | quote }}
+            - name: LOG_LEVEL
+              value: {{ .Values.vgoIam.config.logLevel | quote }}
+            - name: JAEGER_ENDPOINT
+              value: "http://{{ include "vgo-microservices.fullname" . }}-jaeger-collector:14268/api/traces"
+          {{- if .Values.vgoIam.probes.liveness.enabled }}
+          livenessProbe:
+            grpc:
+              port: {{ .Values.vgoIam.service.grpcPort }}
+            initialDelaySeconds: {{ .Values.vgoIam.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.vgoIam.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.vgoIam.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ .Values.vgoIam.probes.liveness.failureThreshold }}
+          {{- end }}
+          {{- if .Values.vgoIam.probes.readiness.enabled }}
+          readinessProbe:
+            grpc:
+              port: {{ .Values.vgoIam.service.grpcPort }}
+            initialDelaySeconds: {{ .Values.vgoIam.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.vgoIam.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.vgoIam.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ .Values.vgoIam.probes.readiness.failureThreshold }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.vgoIam.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "vgo-microservices.fullname" . }}-iam-config
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

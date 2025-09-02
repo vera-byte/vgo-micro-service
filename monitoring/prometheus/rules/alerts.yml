@@ -1,0 +1,145 @@
+groups:
+  - name: vgo-microservices-alerts
+    rules:
+      # 服务可用性告警
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "Service {{ $labels.job }} on {{ $labels.instance }} has been down for more than 1 minute."
+
+      # 高错误率告警
+      - alert: HighErrorRate
+        expr: |
+          (
+            rate(grpc_server_handled_total{grpc_code!="OK"}[5m])
+            /
+            rate(grpc_server_handled_total[5m])
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} for {{ $labels.job }} service."
+
+      # 高延迟告警
+      - alert: HighLatency
+        expr: |
+          histogram_quantile(0.95,
+            rate(grpc_server_handling_seconds_bucket[5m])
+          ) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High latency detected"
+          description: "95th percentile latency is {{ $value }}s for {{ $labels.job }} service."
+
+      # CPU使用率告警
+      - alert: HighCPUUsage
+        expr: |
+          (
+            100 - (avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)
+          ) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage detected"
+          description: "CPU usage is {{ $value | humanizePercentage }} on {{ $labels.instance }}."
+
+      # 内存使用率告警
+      - alert: HighMemoryUsage
+        expr: |
+          (
+            (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes
+          ) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage detected"
+          description: "Memory usage is {{ $value | humanizePercentage }} on {{ $labels.instance }}."
+
+      # 磁盘空间告警
+      - alert: DiskSpaceLow
+        expr: |
+          (
+            (node_filesystem_size_bytes - node_filesystem_free_bytes) / node_filesystem_size_bytes
+          ) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Disk space is running low"
+          description: "Disk usage is {{ $value | humanizePercentage }} on {{ $labels.instance }} for filesystem {{ $labels.mountpoint }}."
+
+      # 数据库连接告警
+      - alert: DatabaseConnectionHigh
+        expr: |
+          pg_stat_activity_count > 80
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High database connections"
+          description: "Database has {{ $value }} active connections."
+
+      # Redis内存使用告警
+      - alert: RedisMemoryHigh
+        expr: |
+          redis_memory_used_bytes / redis_memory_max_bytes > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis memory usage is high"
+          description: "Redis memory usage is {{ $value | humanizePercentage }}."
+
+      # 容器重启告警
+      - alert: ContainerRestarting
+        expr: |
+          rate(container_last_seen[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container is restarting frequently"
+          description: "Container {{ $labels.name }} is restarting frequently."
+
+  - name: vgo-iam-specific
+    rules:
+      # IAM服务特定告警
+      - alert: IAMAuthenticationFailureHigh
+        expr: |
+          rate(grpc_server_handled_total{grpc_service="iam.IAMService",grpc_method="Authenticate",grpc_code!="OK"}[5m]) > 10
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High authentication failure rate"
+          description: "IAM authentication failure rate is {{ $value }} requests/second."
+
+      - alert: IAMAccessKeyRotationOverdue
+        expr: |
+          time() - iam_access_key_last_rotated_timestamp > 7776000  # 90 days
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Access key rotation overdue"
+          description: "Access key {{ $labels.access_key_id }} has not been rotated for more than 90 days."
+
+      - alert: IAMRateLimitHit
+        expr: |
+          rate(iam_rate_limit_hits_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: info
+        annotations:
+          summary: "Rate limit being hit"
+          description: "Rate limiting is being triggered at {{ $value }} hits/second."

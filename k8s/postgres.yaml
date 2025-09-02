@@ -1,0 +1,262 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-config
+  namespace: vgo-microservices
+data:
+  POSTGRES_DB: vgo_iam
+  POSTGRES_USER: vgo_user
+  POSTGRES_PASSWORD: vgo_password
+  PGDATA: /var/lib/postgresql/data/pgdata
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  namespace: vgo-microservices
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: standard
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: vgo-microservices
+  labels:
+    app: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:17-alpine
+        ports:
+        - containerPort: 5432
+        envFrom:
+        - configMapRef:
+            name: postgres-config
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+        - name: init-db
+          mountPath: /docker-entrypoint-initdb.d
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - vgo_user
+            - -d
+            - vgo_iam
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - vgo_user
+            - -d
+            - vgo_iam
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: postgres-storage
+        persistentVolumeClaim:
+          claimName: postgres-pvc
+      - name: init-db
+        configMap:
+          name: postgres-init-script
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: vgo-microservices
+  labels:
+    app: postgres
+spec:
+  type: ClusterIP
+  ports:
+  - port: 5432
+    targetPort: 5432
+    protocol: TCP
+  selector:
+    app: postgres
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init-script
+  namespace: vgo-microservices
+data:
+  init-db.sql: |
+    -- VGO微服务数据库初始化脚本
+    
+    -- 创建数据库（如果不存在）
+    CREATE DATABASE IF NOT EXISTS vgo_iam;
+    CREATE DATABASE IF NOT EXISTS vgo_notify;
+    
+    -- 切换到vgo_iam数据库
+    \c vgo_iam;
+    
+    -- 创建用户表
+    CREATE TABLE IF NOT EXISTS users (
+        id BIGSERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL UNIQUE,
+        email VARCHAR(255) NOT NULL UNIQUE,
+        password_hash VARCHAR(255) NOT NULL,
+        status VARCHAR(50) DEFAULT 'active',
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    
+    -- 创建策略表
+    CREATE TABLE IF NOT EXISTS policies (
+        id BIGSERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL UNIQUE,
+        description TEXT,
+        policy_document JSONB NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    
+    -- 创建访问密钥表
+    CREATE TABLE IF NOT EXISTS access_keys (
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        access_key_id VARCHAR(255) NOT NULL UNIQUE,
+        encrypted_secret_access_key TEXT NOT NULL,
+        status VARCHAR(50) DEFAULT 'active',
+        expires_at TIMESTAMP WITH TIME ZONE,
+        last_rotated_at TIMESTAMP WITH TIME ZONE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    
+    -- 创建用户策略关联表
+    CREATE TABLE IF NOT EXISTS user_policies (
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        policy_id BIGINT NOT NULL REFERENCES policies(id) ON DELETE CASCADE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, policy_id)
+    );
+    
+    -- 创建审计日志表
+    CREATE TABLE IF NOT EXISTS audit_logs (
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT REFERENCES users(id),
+        action VARCHAR(255) NOT NULL,
+        resource_type VARCHAR(255),
+        resource_id VARCHAR(255),
+        details JSONB,
+        ip_address INET,
+        user_agent TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    
+    -- 创建会话表
+    CREATE TABLE IF NOT EXISTS sessions (
+        id BIGSERIAL PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        session_token VARCHAR(255) NOT NULL UNIQUE,
+        expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        last_accessed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    
+    -- 创建索引
+    CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+    CREATE INDEX IF NOT EXISTS idx_users_name ON users(name);
+    CREATE INDEX IF NOT EXISTS idx_users_status ON users(status);
+    
+    CREATE INDEX IF NOT EXISTS idx_access_keys_user_id ON access_keys(user_id);
+    CREATE INDEX IF NOT EXISTS idx_access_keys_access_key_id ON access_keys(access_key_id);
+    CREATE INDEX IF NOT EXISTS idx_access_keys_status ON access_keys(status);
+    CREATE INDEX IF NOT EXISTS idx_access_keys_expires_at ON access_keys(expires_at);
+    
+    CREATE INDEX IF NOT EXISTS idx_policies_name ON policies(name);
+    
+    CREATE INDEX IF NOT EXISTS idx_user_policies_user_id ON user_policies(user_id);
+    CREATE INDEX IF NOT EXISTS idx_user_policies_policy_id ON user_policies(policy_id);
+    
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action);
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
+    
+    CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+    CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(session_token);
+    CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
+    
+    -- 插入默认管理员用户
+    INSERT INTO users (name, email, password_hash, status) 
+    VALUES (
+        'admin', 
+        'admin@vgo.local', 
+        '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', -- password: password
+        'active'
+    ) ON CONFLICT (email) DO NOTHING;
+    
+    -- 插入默认策略
+    INSERT INTO policies (name, description, policy_document) 
+    VALUES (
+        'AdminPolicy',
+        'Full administrative access',
+        '{
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": "*",
+                    "Resource": "*"
+                }
+            ]
+        }'
+    ) ON CONFLICT (name) DO NOTHING;
+    
+    INSERT INTO policies (name, description, policy_document) 
+    VALUES (
+        'ReadOnlyPolicy',
+        'Read-only access to all resources',
+        '{
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "iam:Get*",
+                        "iam:List*",
+                        "iam:Describe*"
+                    ],
+                    "Resource": "*"
+                }
+            ]
+        }'
+    ) ON CONFLICT (name) DO NOTHING;
+    
+    -- 为管理员用户分配管理员策略
+    INSERT INTO user_policies (user_id, policy_id)
+    SELECT u.id, p.id
+    FROM users u, policies p
+    WHERE u.name = 'admin' AND p.name = 'AdminPolicy'
+    ON CONFLICT (user_id, policy_id) DO NOTHING;

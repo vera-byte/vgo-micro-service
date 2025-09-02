@@ -1,0 +1,283 @@
+# VGO微服务 - Taskfile
+# 统一管理submodule和构建任务
+# 使用 Task 替代 Make: https://taskfile.dev/
+
+version: '3'
+
+vars:
+  PROJECT_NAME: vgo-microservices
+  GO_VERSION: 1.24.1
+
+tasks:
+  default:
+    desc: 显示所有可用任务
+    cmds:
+      - task --list
+
+  # Submodule管理任务
+  init:
+    desc: 初始化所有submodule
+    cmds:
+      - echo "🚀 初始化submodules..."
+      - ./scripts/submodule-init.sh
+    sources:
+      - .gitmodules
+    generates:
+      - vgo-kit/**/*
+      - vgo-iam/**/*
+      - vgo-gateway/**/*
+
+  update:
+    desc: 更新所有submodule到最新版本
+    cmds:
+      - echo "🔄 更新submodules..."
+      - ./scripts/submodule-update.sh
+    deps:
+      - init
+
+  sync:
+    desc: 同步所有submodule更改
+    cmds:
+      - echo "🔄 同步submodules..."
+      - ./scripts/submodule-sync.sh
+    deps:
+      - init
+
+  # 构建和测试任务
+  build:
+    desc: 构建所有服务
+    cmds:
+      - echo "🔨 构建所有服务..."
+      - go work sync
+      - go build ./...
+      - echo "✅ 构建完成"
+    sources:
+      - "**/*.go"
+      - "**/go.mod"
+      - "**/go.sum"
+      - go.work
+    deps:
+      - init
+
+  test:
+    desc: 运行所有测试
+    cmds:
+      - echo "🧪 运行测试..."
+      - go work sync
+      - go test ./...
+      - echo "✅ 测试完成"
+    sources:
+      - "**/*.go"
+      - "**/go.mod"
+      - "**/go.sum"
+    deps:
+      - init
+
+  test:verbose:
+    desc: 运行详细测试
+    cmds:
+      - echo "🧪 运行详细测试..."
+      - go work sync
+      - go test -v ./...
+      - echo "✅ 详细测试完成"
+    deps:
+      - init
+
+  clean:
+    desc: 清理构建文件
+    cmds:
+      - echo "🧹 清理构建文件..."
+      - rm -rf bin/
+      - rm -rf */bin/
+      - go clean -cache
+      - echo "✅ 清理完成"
+
+  # Docker管理任务
+  docker:build:
+    desc: 构建Docker镜像
+    cmds:
+      - echo "🐳 构建Docker镜像..."
+      - docker-compose build
+      - echo "✅ Docker镜像构建完成"
+    sources:
+      - docker-compose.yml
+      - "**/Dockerfile"
+      - "**/*.go"
+
+  docker:up:
+    desc: 启动Docker Compose服务
+    cmds:
+      - echo "🚀 启动Docker Compose服务..."
+      - docker-compose up -d
+      - echo "✅ 服务启动完成"
+    deps:
+      - docker:build
+
+  docker:down:
+    desc: 停止Docker Compose服务
+    cmds:
+      - echo "🛑 停止Docker Compose服务..."
+      - docker-compose down
+      - echo "✅ 服务停止完成"
+
+  docker:logs:
+    desc: 查看Docker Compose日志
+    cmds:
+      - docker-compose logs -f
+
+  docker:ps:
+    desc: 查看Docker Compose服务状态
+    cmds:
+      - docker-compose ps
+
+  # 开发工具任务
+  fmt:
+    desc: 格式化代码
+    cmds:
+      - echo "📝 格式化代码..."
+      - go fmt ./...
+      - echo "✅ 代码格式化完成"
+    sources:
+      - "**/*.go"
+
+  lint:
+    desc: 代码检查
+    cmds:
+      - echo "🔍 代码检查..."
+      - |
+        if command -v golangci-lint >/dev/null 2>&1; then
+          golangci-lint run ./...
+        else
+          echo "⚠️  golangci-lint未安装，跳过代码检查"
+          echo "💡 安装命令：go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"
+        fi
+    sources:
+      - "**/*.go"
+      - .golangci.yml
+
+  deps:
+    desc: 更新依赖
+    cmds:
+      - echo "📦 更新依赖..."
+      - go work sync
+      - go mod tidy -C vgo-kit
+      - go mod tidy -C vgo-iam
+      - go mod tidy -C vgo-gateway
+      - echo "✅ 依赖更新完成"
+    deps:
+      - init
+
+  # Kubernetes任务
+  k8s:apply:
+    desc: 应用Kubernetes配置
+    cmds:
+      - echo "☸️  应用Kubernetes配置..."
+      - kubectl apply -f k8s/
+      - echo "✅ Kubernetes配置应用完成"
+    sources:
+      - k8s/**/*.yaml
+
+  k8s:delete:
+    desc: 删除Kubernetes资源
+    cmds:
+      - echo "🗑️  删除Kubernetes资源..."
+      - kubectl delete -f k8s/
+      - echo "✅ Kubernetes资源删除完成"
+
+  k8s:status:
+    desc: 查看Kubernetes服务状态
+    cmds:
+      - kubectl get pods,svc,ingress -n vgo-microservices
+
+  # 监控任务
+  monitoring:up:
+    desc: 启动监控服务
+    cmds:
+      - echo "📊 启动监控服务..."
+      - kubectl apply -f k8s/monitoring/
+      - echo "✅ 监控服务启动完成"
+
+  monitoring:down:
+    desc: 停止监控服务
+    cmds:
+      - echo "📊 停止监控服务..."
+      - kubectl delete -f k8s/monitoring/
+      - echo "✅ 监控服务停止完成"
+
+  # 开发环境任务
+  dev:
+    desc: 初始化开发环境
+    cmds:
+      - task: init
+      - task: deps
+      - task: build
+      - echo "🎉 开发环境准备完成！"
+
+  dev:watch:
+    desc: 监听文件变化并自动构建
+    cmds:
+      - echo "👀 监听文件变化..."
+      - |
+        if command -v watchexec >/dev/null 2>&1; then
+          watchexec -e go -r "task build"
+        else
+          echo "⚠️  watchexec未安装，无法监听文件变化"
+          echo "💡 安装命令：brew install watchexec"
+        fi
+
+  # 工具安装任务
+  install:tools:
+    desc: 安装开发工具
+    cmds:
+      - echo "🔧 安装开发工具..."
+      - go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+      - |
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+          if ! command -v watchexec >/dev/null 2>&1; then
+            echo "安装 watchexec..."
+            brew install watchexec
+          fi
+        fi
+      - echo "✅ 开发工具安装完成"
+
+  # 版本管理任务
+  version:
+    desc: 显示版本信息
+    cmds:
+      - echo "📋 版本信息："
+      - echo "Go版本：$(go version)"
+      - echo "Task版本：$(task --version)"
+      - echo "Docker版本：$(docker --version)"
+      - echo "Kubernetes版本：$(kubectl version --client --short 2>/dev/null || echo 'kubectl未安装')"
+
+  # 帮助任务
+  help:
+    desc: 显示详细帮助信息
+    cmds:
+      - echo "VGO微服务 - Task命令帮助"
+      - echo ""
+      - echo "🚀 快速开始："
+      - echo "  task dev          - 初始化开发环境"
+      - echo "  task build        - 构建所有服务"
+      - echo "  task docker:up    - 启动Docker服务"
+      - echo ""
+      - echo "📦 Submodule管理："
+      - echo "  task init         - 初始化submodule"
+      - echo "  task update       - 更新submodule"
+      - echo "  task sync         - 同步submodule"
+      - echo ""
+      - echo "🔧 开发工具："
+      - echo "  task fmt          - 格式化代码"
+      - echo "  task lint         - 代码检查"
+      - echo "  task test         - 运行测试"
+      - echo ""
+      - echo "🐳 Docker管理："
+      - echo "  task docker:build - 构建镜像"
+      - echo "  task docker:up    - 启动服务"
+      - echo "  task docker:down  - 停止服务"
+      - echo ""
+      - echo "☸️  Kubernetes："
+      - echo "  task k8s:apply    - 应用配置"
+      - echo "  task k8s:status   - 查看状态"
+      - echo ""
+      - echo "💡 提示：使用 'task --list' 查看所有可用任务"

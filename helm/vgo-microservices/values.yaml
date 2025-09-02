@@ -1,0 +1,360 @@
+# VGO微服务默认配置
+
+# 全局配置
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+  storageClass: ""
+  
+# 环境配置
+environment: production
+
+# VGO-IAM服务配置
+vgoIam:
+  enabled: true
+  image:
+    registry: ""
+    repository: vgo-iam
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  
+  replicaCount: 2
+  
+  service:
+    type: ClusterIP
+    grpcPort: 9090
+    httpPort: 8080
+    metricsPort: 8081
+  
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 250m
+      memory: 256Mi
+  
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  
+  config:
+    jwt:
+      secret: "change-me-in-production"
+      expiry: "8h"
+    rateLimit: 200
+    accessKeyRotationDays: 30
+    logLevel: "info"
+  
+  probes:
+    liveness:
+      enabled: true
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 3
+    readiness:
+      enabled: true
+      initialDelaySeconds: 5
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 3
+
+# VGO-NOTIFY服务配置
+vgoNotify:
+  enabled: true
+  image:
+    registry: ""
+    repository: vgo-notify
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  
+  replicaCount: 2
+  
+  service:
+    type: ClusterIP
+    grpcPort: 9092
+    httpPort: 8082
+    metricsPort: 8083
+  
+  resources:
+    limits:
+      cpu: 300m
+      memory: 256Mi
+    requests:
+      cpu: 150m
+      memory: 128Mi
+  
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  
+  config:
+    logLevel: "info"
+    email:
+      provider: "smtp"
+      host: "smtp.example.com"
+      port: 587
+      username: ""
+      password: ""
+      from: "noreply@example.com"
+    sms:
+      provider: "aliyun"
+      apiKey: ""
+      apiSecret: ""
+    webhook:
+      timeout: "30s"
+      retryCount: 3
+  
+  probes:
+    liveness:
+      enabled: true
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 3
+    readiness:
+      enabled: true
+      initialDelaySeconds: 5
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 3
+
+# PostgreSQL配置
+postgresql:
+  enabled: true
+  auth:
+    postgresPassword: "postgres-password"
+    username: "vgo_user"
+    password: "vgo-password"
+    database: "vgo_iam"
+  
+  primary:
+    persistence:
+      enabled: true
+      size: 20Gi
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 250m
+        memory: 256Mi
+  
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+
+# Redis配置
+redis:
+  enabled: true
+  auth:
+    enabled: true
+    password: "redis-password"
+  
+  master:
+    persistence:
+      enabled: true
+      size: 8Gi
+    resources:
+      limits:
+        cpu: 250m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+  
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+
+# 监控配置
+monitoring:
+  # Prometheus配置
+  prometheus:
+    enabled: true
+    server:
+      persistentVolume:
+        enabled: true
+        size: 20Gi
+      resources:
+        limits:
+          cpu: 500m
+          memory: 1Gi
+        requests:
+          cpu: 250m
+          memory: 512Mi
+    
+    alertmanager:
+      enabled: true
+      persistentVolume:
+        enabled: true
+        size: 2Gi
+  
+  # Grafana配置
+  grafana:
+    enabled: true
+    adminPassword: "admin123"
+    persistence:
+      enabled: true
+      size: 10Gi
+    resources:
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    
+    dashboardProviders:
+      dashboardproviders.yaml:
+        apiVersion: 1
+        providers:
+        - name: 'vgo-dashboards'
+          orgId: 1
+          folder: ''
+          type: file
+          disableDeletion: false
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards
+  
+  # Jaeger配置
+  jaeger:
+    enabled: true
+    storage:
+      type: memory
+    resources:
+      limits:
+        cpu: 200m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+  
+  # Node Exporter配置
+  nodeExporter:
+    enabled: true
+    resources:
+      limits:
+        cpu: 100m
+        memory: 128Mi
+      requests:
+        cpu: 50m
+        memory: 64Mi
+
+# Ingress配置
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+  
+  hosts:
+    - host: api.vgo.local
+      paths:
+        - path: /iam
+          pathType: Prefix
+          service: vgo-iam
+          port: 8080
+        - path: /notify
+          pathType: Prefix
+          service: vgo-notify
+          port: 8082
+  
+  tls:
+    - secretName: vgo-tls
+      hosts:
+        - api.vgo.local
+
+# 监控Ingress配置
+monitoringIngress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: monitoring-auth
+    nginx.ingress.kubernetes.io/auth-realm: 'Authentication Required'
+  
+  hosts:
+    - host: monitoring.vgo.local
+      paths:
+        - path: /prometheus
+          pathType: Prefix
+          service: prometheus-server
+          port: 80
+        - path: /grafana
+          pathType: Prefix
+          service: grafana
+          port: 80
+        - path: /jaeger
+          pathType: Prefix
+          service: jaeger-query
+          port: 16686
+  
+  tls:
+    - secretName: monitoring-tls
+      hosts:
+        - monitoring.vgo.local
+
+# 网络策略
+networkPolicy:
+  enabled: true
+  ingress:
+    enabled: true
+  egress:
+    enabled: true
+
+# 服务账户
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Pod安全上下文
+podSecurityContext:
+  fsGroup: 2000
+
+# 安全上下文
+securityContext:
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+
+# 节点选择器
+nodeSelector: {}
+
+# 容忍度
+tolerations: []
+
+# 亲和性
+affinity: {}
+
+# 额外的标签
+extraLabels: {}
+
+# 额外的注解
+extraAnnotations: {}

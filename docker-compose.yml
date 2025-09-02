@@ -1,0 +1,219 @@
+
+services:
+  # 数据库服务
+  postgres:
+    image: postgres:17-alpine
+    container_name: vgo-postgres
+    environment:
+      POSTGRES_DB: vgo_iam
+      POSTGRES_USER: vgo_user
+      POSTGRES_PASSWORD: vgo_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    networks:
+      - vgo-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vgo_user -d vgo_iam"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis缓存服务
+  redis:
+    image: redis:7-alpine
+    container_name: vgo-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./data/redis:/data
+    networks:
+      - vgo-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # VGO-IAM 身份认证服务
+  vgo-iam:
+    build:
+      context: .
+      dockerfile: ./vgo-iam/Dockerfile
+      args:
+        VERSION: ${VERSION:-v1.0.0}
+        COMMIT: ${COMMIT:-unknown}
+        BUILD_TIME: ${BUILD_TIME:-unknown}
+    container_name: vgo-iam
+    ports:
+      - "50051:50051"
+      - "8080:8080"
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=vgo_iam
+      - DB_USER=vgo_user
+      - DB_PASSWORD=vgo_password
+      - REDIS_ADDR=redis:6379
+      - LOG_LEVEL=info
+    volumes:
+      - ./vgo-iam/config:/app/config
+      - ./vgo-iam/logs:/app/logs
+    networks:
+      - vgo-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "grpc_health_probe", "-addr=localhost:50051"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # VGO-NOTIFY 通知服务 (预留)
+  vgo-notify:
+    build:
+      context: ./vgo-notify
+      dockerfile: Dockerfile
+    container_name: vgo-notify
+    ports:
+      - "50052:50052"
+    environment:
+      - REDIS_ADDR=redis:6379
+      - LOG_LEVEL=info
+    volumes:
+      - ./vgo-notify/config:/app/config
+      - ./vgo-notify/logs:/app/logs
+    networks:
+      - vgo-network
+    depends_on:
+      - redis
+    profiles:
+      - notify
+    restart: unless-stopped
+
+  # Prometheus 监控服务
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: vgo-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./monitoring/prometheus/rules:/etc/prometheus/rules
+      - ./data/prometheus:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - vgo-network
+    restart: unless-stopped
+
+  # Grafana 可视化服务
+  grafana:
+    image: grafana/grafana:latest
+    container_name: vgo-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./data/grafana:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+    networks:
+      - vgo-network
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  # Jaeger 链路追踪服务
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: vgo-jaeger
+    ports:
+      - "16686:16686"
+      - "14268:14268"
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - vgo-network
+    restart: unless-stopped
+
+  # Node Exporter 系统监控
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: vgo-node-exporter
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    networks:
+      - vgo-network
+    restart: unless-stopped
+
+  # cAdvisor 容器监控
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: vgo-cadvisor
+    ports:
+      - "8081:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    privileged: true
+    devices:
+      - /dev/kmsg
+    networks:
+      - vgo-network
+    restart: unless-stopped
+
+  # Nginx 反向代理
+  nginx:
+    image: nginx:alpine
+    container_name: vgo-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - ./nginx/ssl:/etc/nginx/ssl
+    networks:
+      - vgo-network
+    depends_on:
+      - vgo-iam
+    restart: unless-stopped
+
+# volumes:
+#   postgres_data:
+#   redis_data:
+#   prometheus_data:
+#   grafana_data:
+
+networks:
+  vgo-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

@@ -1,0 +1,62 @@
+{
+  "name": "vgo-docs",
+  "version": "1.0.0",
+  "description": "VGO微服务系统完整文档 - 身份认证与访问管理解决方案",
+  "main": "index.js",
+  "scripts": {
+    "docs:dev": "vuepress dev --port 8080 --host 0.0.0.0",
+    "docs:dev-safe": "ulimit -n 65536 && vuepress dev --port 8080 --host 0.0.0.0",
+    "docs:build": "vuepress build",
+    "docs:serve": "vuepress serve --port 8080 --host 0.0.0.0",
+    "docs:clean": "rm -rf .vuepress/dist",
+    "docs:preview": "npm run docs:build && npm run docs:serve",
+    "lint": "eslint --ext .js,.vue .",
+    "lint:fix": "eslint --ext .js,.vue . --fix"
+  },
+  "keywords": [
+    "vgo",
+    "microservice",
+    "iam",
+    "authentication",
+    "authorization",
+    "access-management",
+    "documentation",
+    "vuepress",
+    "golang",
+    "grpc"
+  ],
+  "author": "VGO Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vera-byte/vgo_micro_service.git"
+  },
+  "homepage": "https://vera-byte.github.io/vgo_micro_service",
+  "devDependencies": {
+    "vue": "^3.4.0",
+    "vuepress": "^2.0.0-rc.24",
+    "@vuepress/bundler-vite": "^2.0.0-rc.24",
+    "@vuepress/theme-default": "^2.0.0-rc.24",
+    "@vuepress/plugin-back-to-top": "^2.0.0-rc.24",
+    "@vuepress/plugin-medium-zoom": "^2.0.0-rc.24",
+    "@vuepress/plugin-nprogress": "^2.0.0-rc.24",
+    "@vuepress/plugin-search": "^2.0.0-rc.24",
+    "@vuepress/plugin-pwa": "^2.0.0-rc.24",
+    "@vuepress/plugin-google-analytics": "^2.0.0-rc.24",
+    "vuepress-plugin-code-copy": "^1.0.6",
+    "markdown-it-task-lists": "^2.1.1",
+    "markdown-it-footnote": "^3.0.3",
+    "eslint": "^8.57.0",
+    "eslint-plugin-vue": "^9.17.0",
+    "sass": "^1.69.0"
+  },
+  "engines": {
+    "node": ">=20.9.0",
+    "npm": ">=8.0.0"
+  },
+  "browserslist": [
+    "> 1%",
+    "last 2 versions",
+    "not dead"
+  ]
+}

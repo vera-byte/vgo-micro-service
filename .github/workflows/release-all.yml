@@ -1,0 +1,431 @@
+name: Release All Services
+
+# 统一发布所有VGO微服务
+# 触发条件：推送以'release/'开头的分支或手动触发
+on:
+  push:
+    branches:
+      - 'release/*'
+  # 手动触发
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., v1.0.0)'
+        required: true
+        type: string
+      services:
+        description: 'Services to release (comma-separated: vgo-kit,vgo-iam,vgo-gateway or "all")'
+        required: true
+        default: 'all'
+        type: string
+      skip_tests:
+        description: 'Skip tests (for emergency releases)'
+        required: false
+        default: false
+        type: boolean
+      dry_run:
+        description: 'Dry run (simulate release without actual deployment)'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  GO_VERSION: '1.24.1'
+  REGISTRY: ghcr.io
+  ORG_NAME: vera-byte
+
+jobs:
+  # 预检查作业
+  pre-check:
+    name: Pre-release Checks
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      services: ${{ steps.services.outputs.services }}
+      release-order: ${{ steps.services.outputs.release-order }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git for submodules
+        run: |
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule update --init --recursive
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            # 从分支名提取版本 (release/v1.0.0 -> v1.0.0)
+            VERSION="${GITHUB_REF#refs/heads/release/}"
+          fi
+          
+          # 验证版本格式
+          if [[ ! $VERSION =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$ ]]; then
+            echo "❌ 版本格式无效: $VERSION"
+            echo "✅ 正确格式: v1.0.0 或 v1.0.0-beta"
+            exit 1
+          fi
+          
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "📋 发布版本: $VERSION"
+
+      - name: Determine services to release
+        id: services
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            SERVICES_INPUT="${{ github.event.inputs.services }}"
+          else
+            SERVICES_INPUT="all"
+          fi
+          
+          if [ "$SERVICES_INPUT" = "all" ]; then
+            SERVICES="vgo-kit,vgo-iam,vgo-gateway"
+            RELEASE_ORDER="vgo-kit vgo-iam vgo-gateway"
+          else
+            SERVICES="$SERVICES_INPUT"
+            # 确保vgo-kit优先发布（如果包含在列表中）
+            if [[ "$SERVICES" == *"vgo-kit"* ]]; then
+              RELEASE_ORDER="vgo-kit"
+              if [[ "$SERVICES" == *"vgo-iam"* ]]; then
+                RELEASE_ORDER="$RELEASE_ORDER vgo-iam"
+              fi
+              if [[ "$SERVICES" == *"vgo-gateway"* ]]; then
+                RELEASE_ORDER="$RELEASE_ORDER vgo-gateway"
+              fi
+            else
+              RELEASE_ORDER=$(echo "$SERVICES" | tr ',' ' ')
+            fi
+          fi
+          
+          echo "services=$SERVICES" >> $GITHUB_OUTPUT
+          echo "release-order=$RELEASE_ORDER" >> $GITHUB_OUTPUT
+          echo "📋 发布服务: $SERVICES"
+          echo "📋 发布顺序: $RELEASE_ORDER"
+
+      - name: Check workspace structure
+        run: |
+          echo "📋 检查工作区结构..."
+          if [ ! -f "go.work" ]; then
+            echo "❌ go.work 文件不存在"
+            exit 1
+          fi
+          
+          for service in $(echo "${{ steps.services.outputs.services }}" | tr ',' ' '); do
+            if [ ! -d "$service" ]; then
+              echo "❌ 服务目录不存在: $service"
+              exit 1
+            fi
+            if [ ! -f "$service/go.mod" ]; then
+              echo "❌ go.mod 文件不存在: $service/go.mod"
+              exit 1
+            fi
+          done
+          
+          echo "✅ 工作区结构检查通过"
+
+      - name: Check for existing tags
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          echo "📋 检查标签冲突..."
+          
+          for service in $(echo "${{ steps.services.outputs.services }}" | tr ',' ' '); do
+            cd "$service"
+            if git tag -l | grep -q "^$VERSION$"; then
+              echo "❌ 标签 $VERSION 在 $service 中已存在"
+              cd ..
+              exit 1
+            fi
+            cd ..
+          done
+          
+          echo "✅ 标签检查通过"
+
+  # 运行测试（除非跳过）
+  test-all:
+    name: Test All Services
+    runs-on: ubuntu-latest
+    needs: [pre-check]
+    if: github.event.inputs.skip_tests != 'true'
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: vgo_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Install migrate tool
+        run: |
+          go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+
+      - name: Test all services
+        run: |
+          for service in $(echo "${{ needs.pre-check.outputs.services }}" | tr ',' ' '); do
+            echo "🧪 测试 $service..."
+            cd "$service"
+            
+            # 下载依赖
+            go mod download
+            
+            # 运行数据库迁移（如果存在）
+            if [ -d "migrations" ] && [ "$(ls -A migrations)" ]; then
+              migrate -path migrations -database "postgres://postgres:postgres@localhost:5432/vgo_test?sslmode=disable" up || true
+            fi
+            
+            # 运行测试
+            go test -v -race -coverprofile=coverage.out ./...
+            
+            cd ..
+          done
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/vgo_test?sslmode=disable
+          REDIS_URL: redis://localhost:6379
+
+  # 发布vgo-kit（基础库，必须首先发布）
+  release-vgo-kit:
+    name: Release vgo-kit
+    runs-on: ubuntu-latest
+    needs: [pre-check, test-all]
+    if: always() && (needs.test-all.result == 'success' || needs.test-all.result == 'skipped') && contains(needs.pre-check.outputs.services, 'vgo-kit')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git for submodules
+        run: |
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule update --init --recursive
+
+      - name: Create and push tag
+        if: github.event.inputs.dry_run != 'true'
+        run: |
+          cd vgo-kit
+          git tag -a "${{ needs.pre-check.outputs.version }}" -m "Release ${{ needs.pre-check.outputs.version }}"
+          git push origin "${{ needs.pre-check.outputs.version }}"
+          echo "✅ vgo-kit ${{ needs.pre-check.outputs.version }} 标签已创建"
+
+      - name: Simulate tag creation (dry run)
+        if: github.event.inputs.dry_run == 'true'
+        run: |
+          echo "🔍 [DRY RUN] 将为 vgo-kit 创建标签: ${{ needs.pre-check.outputs.version }}"
+
+  # 发布vgo-iam（依赖vgo-kit）
+  release-vgo-iam:
+    name: Release vgo-iam
+    runs-on: ubuntu-latest
+    needs: [pre-check, test-all, release-vgo-kit]
+    if: always() && (needs.test-all.result == 'success' || needs.test-all.result == 'skipped') && (needs.release-vgo-kit.result == 'success' || needs.release-vgo-kit.result == 'skipped') && contains(needs.pre-check.outputs.services, 'vgo-iam')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git for submodules
+        run: |
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule update --init --recursive
+
+      - name: Wait for vgo-kit release to complete
+        if: contains(needs.pre-check.outputs.services, 'vgo-kit')
+        run: |
+          echo "⏳ 等待 vgo-kit 发布完成..."
+          sleep 30  # 给vgo-kit的GitHub Actions一些时间启动
+
+      - name: Create and push tag
+        if: github.event.inputs.dry_run != 'true'
+        run: |
+          cd vgo-iam
+          git tag -a "${{ needs.pre-check.outputs.version }}" -m "Release ${{ needs.pre-check.outputs.version }}"
+          git push origin "${{ needs.pre-check.outputs.version }}"
+          echo "✅ vgo-iam ${{ needs.pre-check.outputs.version }} 标签已创建"
+
+      - name: Simulate tag creation (dry run)
+        if: github.event.inputs.dry_run == 'true'
+        run: |
+          echo "🔍 [DRY RUN] 将为 vgo-iam 创建标签: ${{ needs.pre-check.outputs.version }}"
+
+  # 发布vgo-gateway（依赖vgo-kit）
+  release-vgo-gateway:
+    name: Release vgo-gateway
+    runs-on: ubuntu-latest
+    needs: [pre-check, test-all, release-vgo-kit]
+    if: always() && (needs.test-all.result == 'success' || needs.test-all.result == 'skipped') && (needs.release-vgo-kit.result == 'success' || needs.release-vgo-kit.result == 'skipped') && contains(needs.pre-check.outputs.services, 'vgo-gateway')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git for submodules
+        run: |
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule update --init --recursive
+
+      - name: Wait for vgo-kit release to complete
+        if: contains(needs.pre-check.outputs.services, 'vgo-kit')
+        run: |
+          echo "⏳ 等待 vgo-kit 发布完成..."
+          sleep 30  # 给vgo-kit的GitHub Actions一些时间启动
+
+      - name: Create and push tag
+        if: github.event.inputs.dry_run != 'true'
+        run: |
+          cd vgo-gateway
+          git tag -a "${{ needs.pre-check.outputs.version }}" -m "Release ${{ needs.pre-check.outputs.version }}"
+          git push origin "${{ needs.pre-check.outputs.version }}"
+          echo "✅ vgo-gateway ${{ needs.pre-check.outputs.version }} 标签已创建"
+
+      - name: Simulate tag creation (dry run)
+        if: github.event.inputs.dry_run == 'true'
+        run: |
+          echo "🔍 [DRY RUN] 将为 vgo-gateway 创建标签: ${{ needs.pre-check.outputs.version }}"
+
+  # 发布后总结
+  post-release:
+    name: Post Release Summary
+    runs-on: ubuntu-latest
+    needs: [pre-check, test-all, release-vgo-kit, release-vgo-iam, release-vgo-gateway]
+    if: always()
+    steps:
+      - name: Generate release summary
+        run: |
+          echo "## 🚀 VGO微服务发布总结"
+          echo
+          echo "**版本:** ${{ needs.pre-check.outputs.version }}"
+          echo "**发布时间:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "**触发方式:** ${{ github.event_name }}"
+          echo "**是否为模拟发布:** ${{ github.event.inputs.dry_run || 'false' }}"
+          echo
+          echo "### 📋 发布状态"
+          echo
+          
+          # 检查各个服务的发布状态
+          if [[ "${{ contains(needs.pre-check.outputs.services, 'vgo-kit') }}" == "true" ]]; then
+            if [[ "${{ needs.release-vgo-kit.result }}" == "success" ]]; then
+              echo "✅ **vgo-kit**: 发布成功"
+            else
+              echo "❌ **vgo-kit**: 发布失败"
+            fi
+          fi
+          
+          if [[ "${{ contains(needs.pre-check.outputs.services, 'vgo-iam') }}" == "true" ]]; then
+            if [[ "${{ needs.release-vgo-iam.result }}" == "success" ]]; then
+              echo "✅ **vgo-iam**: 发布成功"
+            else
+              echo "❌ **vgo-iam**: 发布失败"
+            fi
+          fi
+          
+          if [[ "${{ contains(needs.pre-check.outputs.services, 'vgo-gateway') }}" == "true" ]]; then
+            if [[ "${{ needs.release-vgo-gateway.result }}" == "success" ]]; then
+              echo "✅ **vgo-gateway**: 发布成功"
+            else
+              echo "❌ **vgo-gateway**: 发布失败"
+            fi
+          fi
+          
+          echo
+          echo "### 🐳 Docker镜像"
+          echo
+          
+          for service in $(echo "${{ needs.pre-check.outputs.services }}" | tr ',' ' '); do
+            if [[ "$service" != "vgo-kit" ]]; then  # vgo-kit不构建Docker镜像
+              echo "- \`${{ env.REGISTRY }}/${{ env.ORG_NAME }}/$service:${{ needs.pre-check.outputs.version }}\`"
+            fi
+          done
+          
+          echo
+          echo "### 📚 后续步骤"
+          echo
+          echo "1. 检查各服务的GitHub Actions工作流状态"
+          echo "2. 验证Docker镜像是否成功构建和推送"
+          echo "3. 更新部署环境中的镜像版本"
+          echo "4. 执行部署后测试"
+          echo "5. 更新文档和变更日志"
+          
+          if [[ "${{ github.event.inputs.dry_run }}" == "true" ]]; then
+            echo
+            echo "### ⚠️ 注意"
+            echo
+            echo "这是一次模拟发布，没有实际创建标签或触发构建。"
+          fi
+
+      - name: Check overall success
+        run: |
+          FAILED_SERVICES=()
+          
+          if [[ "${{ contains(needs.pre-check.outputs.services, 'vgo-kit') }}" == "true" && "${{ needs.release-vgo-kit.result }}" != "success" ]]; then
+            FAILED_SERVICES+=("vgo-kit")
+          fi
+          
+          if [[ "${{ contains(needs.pre-check.outputs.services, 'vgo-iam') }}" == "true" && "${{ needs.release-vgo-iam.result }}" != "success" ]]; then
+            FAILED_SERVICES+=("vgo-iam")
+          fi
+          
+          if [[ "${{ contains(needs.pre-check.outputs.services, 'vgo-gateway') }}" == "true" && "${{ needs.release-vgo-gateway.result }}" != "success" ]]; then
+            FAILED_SERVICES+=("vgo-gateway")
+          fi
+          
+          if [[ ${#FAILED_SERVICES[@]} -gt 0 ]]; then
+            echo "❌ 以下服务发布失败: ${FAILED_SERVICES[*]}"
+            exit 1
+          else
+            echo "✅ 所有服务发布成功！"
+          fi

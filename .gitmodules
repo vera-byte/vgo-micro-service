@@ -1,0 +1,9 @@
+[submodule "vgo-kit"]
+	path = vgo-kit
+	url = git@github.com:vera-byte/vgo-kit.git
+[submodule "vgo-iam"]
+	path = vgo-iam
+	url = git@github.com:vera-byte/vgo-iam.git
+[submodule "vgo-gateway"]
+	path = vgo-gateway
+	url = git@github.com:vera-byte/vgo-gateway.git
