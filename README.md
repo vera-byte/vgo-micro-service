@@ -810,4 +810,48 @@ Apache License 2.0
 
 - 项目主页: https://github.com/vgo/microservices
 - 问题反馈: https://github.com/vgo/microservices/issues
-- 邮箱: team@vgo.com
+
+
+
+## 发布流程
+
+### 检查所有项目状态：
+``` sh
+./scripts/release.sh check-all
+```
+
+### 发布单个项目：
+``` sh
+# 发布vgo-kit
+./scripts/release.sh release vgo-kit v1.0.0
+
+# 发布vgo-iam
+./scripts/release.sh release vgo-iam v1.0.0
+
+# 发布vgo-gateway
+./scripts/release.sh release vgo-gateway v1.0.0
+
+```
+
+
+### 发布所有项目：
+``` sh
+./scripts/release.sh release-all v1.0.0
+
+```
+
+
+### 其他有用命令：
+``` sh
+# 列出所有项目状态
+./scripts/release.sh list
+
+# 检查单个项目
+./scripts/release.sh check vgo-iam
+
+# 强制发布（跳过确认）
+./scripts/release.sh release-all v1.0.0 -f
+
+# 跳过测试发布
+./scripts/release.sh release vgo-kit v1.0.0 -s
+```
